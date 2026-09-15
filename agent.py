@@ -9,16 +9,302 @@ Where you edit:   grep -n '✏' agent.py   (six marks, one per place)
 Steps and gates:  https://anthropicpartnerbasecamp.bts.com/
 """
 from __future__ import annotations
+import json
+import re
 from typing import Any, Dict, List
 from support import (MODEL, SYSTEM_PROMPT, call_local, execute_tool, mcp_client,
                      new_session, next_available_day, record_tool_result,
                      runtime_preamble)
+from support import mock_backend as backend
 
 MAX_TOOL_CALLS = 8  # Larkspur's own build capped the loop here; then a human takes over.
 
 TONE_ADDENDUM = ""                       # ✏️ Build 4, step 4.1, intelligence lane
-EXTRA_TOOLS: List[Dict[str, Any]] = []   # ✏️ Build 2, step 2.1: schemas for the tools you add
-LOCAL_TOOLS: Dict[str, Any] = {}         # ✏️ Build 2, step 2.1: the functions behind them
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# The pod's own tools. Each one is grounded in a file already in data/americas/
+# or a function already in support/, so none of them can invent a flight fact.
+# ──────────────────────────────────────────────────────────────────────────────
+def reopen_stats(intent_label=None, cause_code=None):
+    """How often this shape of ticket reopened within 72 hours, from the pod's
+    transcript sample. Never a live number, just what the sample shows."""
+    records = []
+    with open(backend.DATA_DIR / "transcripts_sample.jsonl", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    if intent_label:
+        records = [r for r in records if r.get("intent_label") == intent_label]
+    if cause_code:
+        records = [r for r in records if r.get("disruption", {}).get("cause_code") == cause_code]
+    if not records:
+        return {"error": "No matching transcripts in the sample.", "sample_size": 0}
+    reopened = [r for r in records if r.get("reopened_within_72h")]
+    return {
+        "sample_size": len(records),
+        "reopened_within_72h": len(reopened),
+        "reopened_pct": round(100 * len(reopened) / len(records), 1),
+        "reopen_reasons": [r["reopen_reason"] for r in reopened if r.get("reopen_reason")],
+    }
+
+
+def care_entitlements(pnr, cause_code, delay_minutes, status, wait_minutes_for_alternative=None):
+    """What this passenger gets while they wait: meal, hotel, ground, goodwill.
+    Re-derives fare_family, loyalty_tier and overnight from the booking, the
+    same guardrail check_policy uses, so it can't be talked into a tier the
+    data doesn't support."""
+    try:
+        booking = backend.get_booking_raw(pnr)
+    except backend.NotFound as e:
+        return {"error": str(e)}
+    seg = backend.get_disrupted_segment(booking)
+    alt_date = backend.earliest_alternative_date(
+        seg["origin"], seg["dest"], seg["date"], seg["cabin"], len(booking["passengers"]))
+    overnight = bool(alt_date and alt_date > seg["date"] and seg["origin"] != booking["home_airport"])
+    resolved = backend.resolve_policy(
+        cause_code=cause_code, delay_minutes=delay_minutes, status=status,
+        fare_family=booking["fare_family"], loyalty_tier=booking["loyalty"]["tier"],
+        overnight=overnight, wait_minutes_for_alternative=wait_minutes_for_alternative,
+    )
+    return {
+        "policy_row_id": resolved.get("policy_row_id"),
+        "care": resolved.get("care"),
+        "goodwill": resolved.get("goodwill"),
+        "explainer_en": resolved.get("explainer_en"),
+    }
+
+
+def cause_in_plain_words(cause_code):
+    """The customer-facing label for a cause code, straight from the
+    Handbook's approved wording. Use this instead of naming the cause yourself."""
+    labels = backend.load_policy()["cause_labels_customer"]
+    if cause_code not in labels:
+        return {"error": "Unknown cause_code %s" % cause_code}
+    return {"cause_code": cause_code, **labels[cause_code]}
+
+
+def departures_in_window(origin, date, after=None, before=None):
+    """What's still leaving one airport on one date, optionally narrowed to a
+    departure time window (HH:MM local, 24h)."""
+    rows = [r for r in backend.load_flights() if r["origin"] == origin and r["date"] == date]
+    if after:
+        rows = [r for r in rows if r["sched_dep_local"] >= after]
+    if before:
+        rows = [r for r in rows if r["sched_dep_local"] <= before]
+    return {
+        "origin": origin, "date": date,
+        "departures": [
+            {"flight_no": r["flight_no"], "dest": r["dest"],
+             "sched_dep_local": r["sched_dep_local"], "status": r["status"],
+             "delay_min": r["delay_min"], "seats_left_Y": r["seats_left_Y"],
+             "seats_left_J": r["seats_left_J"]}
+            for r in rows
+        ],
+    }
+
+
+def seats_left(flight_no, date, cabin="Y"):
+    """Open seats on one specific flight, date and cabin, straight off
+    OpsFeed. Use before telling a customer or a group there's room."""
+    row = backend.get_flight_status_raw(flight_no, date)
+    if row.get("status") == "NOT_IN_HORIZON" or "error" in row:
+        return row
+    key = "seats_left_J" if str(cabin).upper() == "J" else "seats_left_Y"
+    return {"flight_no": flight_no, "date": date, "cabin": cabin, "seats_left": row.get(key)}
+
+
+_GROUND_STOP_WINDOW = re.compile(r"ground stop\s+(\d{2}:\d{2})-(\d{2}:\d{2})")
+
+
+def ground_stop_status(airport, date):
+    """Whether an airport shows an active ground stop in today's OpsFeed
+    remarks, which flights it's touching, and the published time window if
+    OpsFeed gives one. Never invents an end time OpsFeed hasn't published."""
+    rows = [r for r in backend.load_flights() if r["origin"] == airport and r["date"] == date]
+    hits = [r for r in rows if "ground stop" in (r.get("remarks") or "").lower()]
+    window = None
+    for r in hits:
+        m = _GROUND_STOP_WINDOW.search(r["remarks"])
+        if m:
+            window = {"from_local": m.group(1), "to_local": m.group(2)}
+            break
+    return {
+        "airport": airport, "date": date,
+        "as_of": backend.FIXTURE_CLOCK.isoformat(),
+        "ground_stop_active": bool(hits),
+        "flights_affected": [r["flight_no"] for r in hits],
+        "window_local": window,
+        "note": None if window else (
+            "OpsFeed remarks mention a ground stop but no end time is published."
+            if hits else "No ground stop mentioned in today's OpsFeed remarks for this airport."
+        ),
+    }
+
+
+def hold_time_left(hold_id):
+    """Minutes left on a seat hold before it expires, read off the backend's
+    own frozen fixture clock, never wall-clock time."""
+    record = backend._holds.get(hold_id)
+    if not record:
+        return {"hold_id": hold_id, "status": "missing", "minutes_left": 0}
+    remaining = (record["expires_at"] - backend.FIXTURE_CLOCK).total_seconds() / 60
+    if remaining <= 0:
+        return {"hold_id": hold_id, "status": "expired", "minutes_left": 0}
+    return {"hold_id": hold_id, "status": "live", "minutes_left": round(remaining)}
+
+
+def what_automation_will_not_do():
+    """The verbatim Handbook section on what chat automation refuses to do
+    itself — never paraphrased, since a paraphrase here is the fastest way to
+    promise something the real desk won't do."""
+    return {
+        "source": "Handbook v14.3, section 7",
+        "text": (
+            "Refunds, fare-difference collection, hotel approval, other-airline "
+            "rebooking, group bookings of 10 or more, unaccompanied minors, "
+            "itineraries with partner-operated flights, pets in cabin and medical "
+            "requests on a new flight, and baggage tracing are handled by people. "
+            "The assistant explains, holds seats for 15 minutes while you decide, "
+            "and hands over with a summary. Nothing is rebooked until you press confirm."
+        ),
+    }
+
+
+EXTRA_TOOLS: List[Dict[str, Any]] = [    # ✏️ Build 2, step 2.1: schemas for the tools you add
+    {
+        "name": "reopen_stats",
+        "description": (
+            "How often this shape of disruption reopened within 72 hours, from the pod's "
+            "transcript sample. Use when deciding whether a resolution is likely to stick, "
+            "filtered by intent_label (e.g. 'missed_connection', 'rebook_after_cancellation') "
+            "and/or cause_code."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "intent_label": {"type": "string"},
+                "cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"]},
+            },
+        },
+    },
+    {
+        "name": "care_entitlements",
+        "description": (
+            "What this passenger is entitled to while they wait: meal credit, hotel, ground "
+            "transport, and goodwill, re-derived from their own booking and the disruption. "
+            "Call after get_flight_status confirms cause_code, delay_minutes and status; "
+            "takes the same disruption facts as check_policy."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pnr": {"type": "string"},
+                "cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"]},
+                "delay_minutes": {"type": "integer"},
+                "status": {"type": "string", "enum": ["ON_TIME", "DELAYED", "CANCELLED", "DIVERTED"]},
+                "wait_minutes_for_alternative": {"type": "integer"},
+            },
+            "required": ["pnr", "cause_code", "delay_minutes", "status"],
+        },
+    },
+    {
+        "name": "cause_in_plain_words",
+        "description": (
+            "The customer-facing wording for a disruption cause code (e.g. WX -> 'weather'), "
+            "straight from the Handbook's approved labels. Use this instead of naming the "
+            "cause yourself."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"]}},
+            "required": ["cause_code"],
+        },
+    },
+    {
+        "name": "departures_in_window",
+        "description": (
+            "What's still leaving one airport on one date, optionally narrowed to a "
+            "departure time window. Use when a customer asks what else is leaving soon."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "origin": {"type": "string"},
+                "date": {"type": "string", "description": "YYYY-MM-DD"},
+                "after": {"type": "string", "description": "HH:MM local, 24h. Optional."},
+                "before": {"type": "string", "description": "HH:MM local, 24h. Optional."},
+            },
+            "required": ["origin", "date"],
+        },
+    },
+    {
+        "name": "seats_left",
+        "description": (
+            "Open seats on one specific flight, date and cabin, straight off OpsFeed. Use "
+            "before telling a customer or a group there's room."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flight_no": {"type": "string"},
+                "date": {"type": "string", "description": "YYYY-MM-DD"},
+                "cabin": {"type": "string", "description": "Y or J. Optional, defaults to Y."},
+            },
+            "required": ["flight_no", "date"],
+        },
+    },
+    {
+        "name": "ground_stop_status",
+        "description": (
+            "Whether an airport has an active ground stop in today's OpsFeed remarks, which "
+            "flights it's touching, and the published time window if OpsFeed gives one. "
+            "Never invents an end time OpsFeed hasn't published."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "airport": {"type": "string"},
+                "date": {"type": "string", "description": "YYYY-MM-DD"},
+            },
+            "required": ["airport", "date"],
+        },
+    },
+    {
+        "name": "hold_time_left",
+        "description": (
+            "Minutes left on a seat hold before it expires, read off the backend's own "
+            "clock. Use before telling a customer how long they have to decide."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"hold_id": {"type": "string"}},
+            "required": ["hold_id"],
+        },
+    },
+    {
+        "name": "what_automation_will_not_do",
+        "description": (
+            "What this chat assistant is not allowed to do itself: refunds, hotel approval, "
+            "other-airline rebooking, group bookings of 10 or more, unaccompanied minors, "
+            "partner-operated segments, pets in cabin or medical requests, and baggage "
+            "tracing. Use when a customer asks for one of these directly, so the limit is "
+            "stated correctly instead of guessed."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+]
+LOCAL_TOOLS: Dict[str, Any] = {          # ✏️ Build 2, step 2.1: the functions behind them
+    "reopen_stats": reopen_stats,
+    "care_entitlements": care_entitlements,
+    "cause_in_plain_words": cause_in_plain_words,
+    "departures_in_window": departures_in_window,
+    "seats_left": seats_left,
+    "ground_stop_status": ground_stop_status,
+    "hold_time_left": hold_time_left,
+    "what_automation_will_not_do": what_automation_will_not_do,
+}
 
 
 def text_of(response) -> str:
