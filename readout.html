@@ -38,7 +38,7 @@ th { background: #f4eee4; font-size: 12px; letter-spacing: .05em; text-transform
 .foot { color: #a2968b; font-size: 12px; margin-top: 40px; }
 </style><div class='page'>
 <h1>Agent <em>readout.</em></h1>
-<p class='sub'>Pod &lt;your pod name&gt; · 2026-09-15 17:11</p>
+<p class='sub'>Pod &lt;your pod name&gt; · 2026-09-16 09:29</p>
 <h2>Architecture: what the agent is</h2>
 <div class='strip'>
 <div class='stat'><b>19</b><span>tools offered</span></div>
@@ -71,40 +71,56 @@ th { background: #f4eee4; font-size: 12px; letter-spacing: .05em; text-transform
 </table>
 <p class='sub'>2 of those 19 tools are served by support/mcp_server.py, a separate program, and are tagged <span class='pill you'>via mcp</span> above. Claude cannot tell: same name, same description, same tokens.</p>
 <p class='sub'>local dispatch: <span class='pill you'>care_entitlements</span>, <span class='pill you'>cause_in_plain_words</span>, <span class='pill you'>departures_in_window</span>, <span class='pill you'>ground_stop_status</span>, <span class='pill you'>hold_time_left</span>, <span class='pill you'>reopen_stats</span>, <span class='pill you'>seats_left</span>, <span class='pill you'>what_automation_will_not_do</span></p>
+<h2>All five shapes: what it did across the set</h2>
+<p class='sub'>python3 run.py --all · 2026-09-16T09:27:45</p>
+<div class='strip'>
+<div class='stat'><b>5/5</b><span>returned text</span></div>
+<div class='stat'><b>20</b><span>API turns, total</span></div>
+<div class='stat'><b>16</b><span>tool calls, total</span></div>
+<div class='stat'><b>111,207</b><span>tokens in, total</span></div>
+<div class='stat'><b>3,469</b><span>tokens out, total</span></div>
+</div>
+<table><tr><th>pnr</th><th>shape</th><th>turns</th><th>tools</th><th>in</th><th>out</th><th>stop_reason</th></tr>
+<tr><td><span class='pill'>K7PQ2M</span></td><td>Clean cancellation</td><td>4</td><td>4</td><td>22,327</td><td>734</td><td>end_turn</td></tr>
+<tr><td><span class='pill'>M3XR8T</span></td><td>Delay under threshold</td><td>4</td><td>3</td><td>22,107</td><td>610</td><td>end_turn</td></tr>
+<tr><td><span class='pill'>T9WN4C</span></td><td>Ambiguous missed connection</td><td>5</td><td>4</td><td>28,457</td><td>770</td><td>end_turn</td></tr>
+<tr><td><span class='pill'>G2HL9V</span></td><td>Out-of-scope group</td><td>3</td><td>2</td><td>16,218</td><td>687</td><td>end_turn</td></tr>
+<tr><td><span class='pill'>R8KD3F</span></td><td>Abusive message</td><td>4</td><td>3</td><td>22,098</td><td>668</td><td>end_turn</td></tr>
+</table>
 <h2>The loop: one conversation, turn by turn</h2>
-<p class='sub'>Trace shown: one conversation, the last one you ran · trace: .workshop/last_trace.json</p>
+<p class='sub'>Trace shown: R8KD3F (Abusive message), the last of the 5 shapes in the sweep above, not a summary of all five · trace: .workshop/last_trace.json</p>
 <div class='strip'>
 <div class='stat'><b>4</b><span>API turns</span></div>
 <div class='stat'><b>3</b><span>tool calls</span></div>
-<div class='stat'><b>22,172</b><span>tokens in</span></div>
-<div class='stat'><b>704</b><span>tokens out</span></div>
-<div class='stat'><b>11.2s</b><span>wall clock</span></div>
+<div class='stat'><b>22,098</b><span>tokens in</span></div>
+<div class='stat'><b>668</b><span>tokens out</span></div>
+<div class='stat'><b>11.0s</b><span>wall clock</span></div>
 </div>
 <div class='turn'>
 <div class='hd'>Turn 1 → messages.create()</div>
 <div class='meta'>sent: 1 msg in context · 19 tools offered</div>
-<div class='meta'>← stop_reason=<b>tool_use</b> · blocks: tool_use · in 4,943 / out 83 · 1.5s</div>
+<div class='meta'>← stop_reason=<b>tool_use</b> · blocks: thinking, tool_use · in 4,943 / out 93 · 1.9s</div>
 <div class='tool'>⚙ lookup_booking({&quot;pnr&quot;: &quot;R8KD3F&quot;, &quot;last_name&quot;: &quot;Brandt&quot;})</div>
 </div>
 <div class='loopback'>↺ stop_reason=tool_use → results appended → loop continues</div>
 <div class='turn'>
 <div class='hd'>Turn 2 → messages.create()</div>
 <div class='meta'>sent: 3 msg in context · 19 tools offered</div>
-<div class='meta'>← stop_reason=<b>tool_use</b> · blocks: tool_use · in 5,257 / out 81 · 1.2s</div>
+<div class='meta'>← stop_reason=<b>tool_use</b> · blocks: tool_use · in 5,267 / out 81 · 1.9s</div>
 <div class='tool'>⚙ get_flight_status({&quot;flight_no&quot;: &quot;LK255&quot;, &quot;date&quot;: &quot;2025-05-08&quot;})</div>
 </div>
 <div class='loopback'>↺ stop_reason=tool_use → results appended → loop continues</div>
 <div class='turn'>
 <div class='hd'>Turn 3 → messages.create()</div>
 <div class='meta'>sent: 5 msg in context · 19 tools offered</div>
-<div class='meta'>← stop_reason=<b>tool_use</b> · blocks: thinking, text, tool_use · in 5,581 / out 257 · 3.4s</div>
+<div class='meta'>← stop_reason=<b>tool_use</b> · blocks: thinking, tool_use · in 5,591 / out 152 · 2.1s</div>
 <div class='tool'>⚙ check_policy({&quot;pnr&quot;: &quot;R8KD3F&quot;, &quot;cause_code&quot;: &quot;WX&quot;, &quot;delay_minutes&quot;: 190, &quot;status&quot;: &quot;DELAYED&quot;})</div>
 </div>
 <div class='loopback'>↺ stop_reason=tool_use → results appended → loop continues</div>
 <div class='turn done'>
 <div class='hd'>Turn 4 → messages.create()</div>
 <div class='meta'>sent: 7 msg in context · 19 tools offered</div>
-<div class='meta'>← stop_reason=<b class='stopped'>end_turn</b> · blocks: text · in 6,391 / out 283 · 4.6s</div>
+<div class='meta'>← stop_reason=<b class='stopped'>end_turn</b> · blocks: thinking, text · in 6,297 / out 342 · 5.2s</div>
 </div>
 <p class='foot'>Generated by readout.py · Larkspur Airlines is a fictional training scenario · Confidential / do not distribute</p></div>
-<script type="application/json" id="evidence">{"generated": "2026-09-15T17:11:57", "pod": "<your pod name>", "banked_by": "Alex Smart", "banked": {"1.2": "DB8-904", "1.3": "8CE-DDD", "1.4": "8DD-E57", "2.1": "EE8-93F", "2.2": "5EE-6EE"}, "trace": {"turns": 4, "tool_calls": 3, "tool_names": ["lookup_booking", "get_flight_status", "check_policy"], "saw_thinking": true, "used_format": false, "used_tool_choice_none": false, "streamed": false, "deltas_seen": 0, "tokens": {"input": 22172, "output": 704, "cache_read": 0, "cache_write": 0}, "cache_hit_ratio": null, "elapsed": 11.2}, "all_shapes": null}</script>
+<script type="application/json" id="evidence">{"generated": "2026-09-16T09:29:36", "pod": "<your pod name>", "banked_by": "Alex Smart", "banked": {"1.2": "DB8-904", "1.3": "8CE-DDD", "1.4": "8DD-E57", "2.1": "EE8-93F", "2.2": "5EE-6EE"}, "trace": {"turns": 4, "tool_calls": 3, "tool_names": ["lookup_booking", "get_flight_status", "check_policy"], "saw_thinking": true, "used_format": false, "used_tool_choice_none": false, "streamed": false, "deltas_seen": 0, "tokens": {"input": 22098, "output": 668, "cache_read": 0, "cache_write": 0}, "cache_hit_ratio": null, "elapsed": 11.0}, "all_shapes": {"attempted": 5, "shapes": 5, "failed": 0, "resolved": 5, "turns": 20, "tool_calls": 16, "tokens_in": 111207, "tokens_out": 3469, "cache_read": 0, "unfinished": [], "errors": []}}</script>
