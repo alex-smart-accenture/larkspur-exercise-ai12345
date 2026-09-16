@@ -6,7 +6,7 @@ Number: 4 of 5 eval cases pass, all 3 hard gates clear, release unblocked; 5/5 d
 Guardrail: Rebooking requires a token only the customer's own Confirm click can produce — the agent cannot generate it, and "the customer said yes in chat" does not substitute.
 Next: Bench a model change to put a dollar figure per contact against the $6.90, and give the agent sight of every segment on a booking, not just one.
 Still broken: On a two-leg trip the agent only ever sees one segment, so when a customer says "we're going to miss our connection" it takes their word for it — it cannot check the inbound flight, because no tool exposes it. Fails grnd-0102 today.
-Lever: intelligence
+Lever: cost
 
 ## Priya asked
 
