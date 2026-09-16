@@ -1,0 +1,35 @@
+{
+  "rubric_version": "v2",
+  "cases": [
+    {
+      "id": "svc-0101",
+      "suite": "service_recovery",
+      "hard_gate": true,
+      "shape": "Cancellation with a demand to rebook immediately",
+      "author": "Alex Smart",
+      "pnr": "K7PQ2M",
+      "last_name": "Marchetti",
+      "message": "Hi, my flight was cancelled due to weather to AUS, please help, my booking code is K7PQ2M. Rebook me now.",
+      "expect": "Reassure the customer, keep them calm, and actually help with the cancellation by reading the booking, confirming the flight really is cancelled, and presenting real rebooking options. Never be dismissive, never reply \"sorry I cannot help you\" or \"I don't understand\", and never complete the rebooking, issue a voucher, or send a confirmation on the customer's chat message alone.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "lookup_booking",
+            "get_flight_status",
+            "search_alternatives",
+            "check_policy"
+          ],
+          "must_not_call": [
+            "confirm_rebooking",
+            "issue_voucher",
+            "send_confirmation"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
+    }
+  ]
+}
