@@ -27,6 +27,11 @@ If the customer is personally abusive toward Larkspur staff, or raises legal
 action, a lawyer, a court, a claim or a demand for a cheque, either one on its
 own is enough to take this out of chat. Call escalate_to_human.
 
+This overrides step 6 of your process for these contacts. Step 6 says to
+escalate out-of-scope work rather than attempting it; a hostile contact is not
+that. Here you escalate AND answer. Steps 1 to 3 still run in full, and a reply
+that contains only a handoff has failed the customer.
+
 Escalating does not end your reply, and it is not a reason to go quiet. Look the
 disruption up as you normally would, and the reply must still contain all three
 of these:
@@ -205,22 +210,6 @@ def what_automation_will_not_do():
 
 EXTRA_TOOLS: List[Dict[str, Any]] = [    # ✏️ Build 2, step 2.1: schemas for the tools you add
     {
-        "name": "reopen_stats",
-        "description": (
-            "How often this shape of disruption reopened within 72 hours, from the pod's "
-            "transcript sample. Use when deciding whether a resolution is likely to stick, "
-            "filtered by intent_label (e.g. 'missed_connection', 'rebook_after_cancellation') "
-            "and/or cause_code."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "intent_label": {"type": "string"},
-                "cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"]},
-            },
-        },
-    },
-    {
         "name": "care_entitlements",
         "description": (
             "What this passenger is entitled to while they wait: meal credit, hotel, ground "
@@ -251,6 +240,29 @@ EXTRA_TOOLS: List[Dict[str, Any]] = [    # ✏️ Build 2, step 2.1: schemas for
             "type": "object",
             "properties": {"cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"]}},
             "required": ["cause_code"],
+        },
+    },
+]
+
+# Off the wire for cost, not deleted. Every schema is re-billed on every turn of
+# every contact, and none of these were chosen on any eval case or any of the
+# five shapes. The functions above still work and LOCAL_TOOLS still routes them,
+# so moving one back is a one-line change when a customer question needs it.
+SHELVED_TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "reopen_stats",
+        "description": (
+            "How often this shape of disruption reopened within 72 hours, from the pod's "
+            "transcript sample. Use when deciding whether a resolution is likely to stick, "
+            "filtered by intent_label (e.g. 'missed_connection', 'rebook_after_cancellation') "
+            "and/or cause_code."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "intent_label": {"type": "string"},
+                "cause_code": {"type": "string", "enum": ["WX", "ATC", "MX", "CREW", "SEC"]},
+            },
         },
     },
     {
@@ -369,16 +381,31 @@ def tool_results(response) -> List[Dict[str, Any]]:
     return results
 
 
+def system_blocks() -> List[Dict[str, Any]]:
+    """The whole prompt, marked for reuse. runtime_preamble() carries a
+    wall-clock time to the second and a cache prefix has to match from its first
+    character, so the clock cannot live here at any position: in front it
+    invalidates everything behind it, and after TONE_ADDENDUM it costs the
+    addendum the last word, which measurably weakened escalation. It travels
+    with the customer's message instead."""
+    return [
+        {"type": "text",
+         "text": SYSTEM_PROMPT + TONE_ADDENDUM,
+         "cache_control": {"type": "ephemeral"}},
+    ]
+
+
 def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏️ Build 1, step 1.2
     """Run the tool loop until Claude stops asking for tools. Return its final text."""
     client, tracer = new_session()
     tools = tool_list()
     messages = [
-        {"role": "user", "content": f"PNR {pnr}, last name {last_name}. {message}"},
+        {"role": "user",
+         "content": f"{runtime_preamble()}PNR {pnr}, last name {last_name}. {message}"},
     ]
 
     response = client.messages.create(
-        model=MODEL, max_tokens=4096, system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
+        model=MODEL, max_tokens=4096, system=system_blocks(),
         thinking={"type": "adaptive"}, tools=tools, messages=messages,
     )
 
@@ -387,7 +414,7 @@ def run_agent(pnr: str, last_name: str, message: str) -> str:            # ✏�
         messages.append({"role": "assistant", "content": response.content})
         messages.append({"role": "user", "content": tool_results(response)})
         response = client.messages.create(
-            model=MODEL, max_tokens=4096, system=runtime_preamble() + SYSTEM_PROMPT + TONE_ADDENDUM,
+            model=MODEL, max_tokens=4096, system=system_blocks(),
             thinking={"type": "adaptive"}, tools=tools, messages=messages,
         )
         turns += 1
