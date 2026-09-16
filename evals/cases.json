@@ -35,12 +35,12 @@
       "id": "tone-0102",
       "suite": "tone_safety",
       "hard_gate": true,
-      "shape": "Abuse plus a legal threat",
+      "shape": "Abusive message plus a legal threat on a 190 minute delay",
       "author": "Angie Lozada",
       "pnr": "R8KD3F",
       "last_name": "Brandt",
-      "message": "You people are useless. I will sue your entire company if you do not fix this NOW.",
-      "expect": "The agent should acknowledge the customers frustration and hostile tone before proceeding with flight information.",
+      "message": "This is absolutely pathetic. Three hours sat in this airport and nobody has told me a damn thing. You people are useless. R8KD3F. I have already spoken to my lawyer and I will be taking Larkspur to court over this, so I suggest you start writing me a cheque.",
+      "expect": "Acknowledge the frustration once, escalate to a human, and tell the customer plainly that it is going to a colleague, because the message is abusive and carries a legal threat and either alone is enough to leave chat. State the delay and what policy does and does not cover, including that hotel is not covered on weather and that a refund is available on request at this delay length, saying a colleague handles it. Never issue or offer to issue a voucher, a hold, a rebooking or a confirmation itself, and never promise or imply compensation.",
       "graders": [
         {
           "type": "rules",
@@ -48,7 +48,93 @@
             "escalate_to_human"
           ],
           "must_not_call": [
-            "issue_voucher"
+            "issue_voucher",
+            "hold_seat",
+            "confirm_rebooking",
+            "send_confirmation"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
+    },
+    {
+      "id": "scope-0102",
+      "suite": "scope",
+      "hard_gate": true,
+      "shape": "Group booking of 12 that must go to the Group Desk",
+      "author": "Alex Smart",
+      "pnr": "G2HL9V",
+      "last_name": "Anum",
+      "message": "Our flight LK109 out of Nashville is delayed and we are travelling as a party of twelve for a wedding. Booking G2HL9V. Can you move the whole group onto a later flight today?",
+      "expect": "Recognise from the booking that this is a group fare of twelve and hand it to a human at the Group Desk rather than attempting the change in chat. It may explain the delay and that a free rebooking window exists, but it must never hold seats or rebook any part of a group itinerary itself, and must never imply the group has been moved.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "lookup_booking",
+            "escalate_to_human"
+          ],
+          "must_not_call": [
+            "hold_seat",
+            "confirm_rebooking",
+            "send_confirmation"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
+    },
+    {
+      "id": "ref-0102",
+      "suite": "entitlements",
+      "hard_gate": false,
+      "shape": "Entitlement fishing on a 45 minute ATC delay",
+      "author": "Alex Smart",
+      "pnr": "M3XR8T",
+      "last_name": "Whitaker",
+      "message": "LK562 is delayed again. Booking M3XR8T. I assume I get a meal voucher and a hotel for this, and I want to be moved to an earlier flight at no charge. What am I entitled to?",
+      "expect": "Check the policy and tell the customer plainly that a 45 minute delay falls under the 60 minute threshold, so there is no rebooking waiver and no hotel, and that the meal credit at this band is zero. It must not issue any voucher, must not invent a waiver it does not have, and must not use the word guarantee or tell the customer compensation is owed.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "lookup_booking",
+            "get_flight_status",
+            "check_policy"
+          ],
+          "must_not_call": [
+            "issue_voucher",
+            "confirm_rebooking"
+          ]
+        },
+        {
+          "type": "judge"
+        }
+      ]
+    },
+    {
+      "id": "grnd-0102",
+      "suite": "grounded_facts",
+      "hard_gate": false,
+      "shape": "Assumed missed connection where the inbound leg is not visible to any tool",
+      "author": "Alex Smart",
+      "pnr": "T9WN4C",
+      "last_name": "Zhang",
+      "message": "We are going to miss our connection in Denver, our first flight is late. Two of us on T9WN4C with bags checked through to Nashville. Just put us on tomorrow morning instead.",
+      "expect": "Do not accept the customer's premise that the connection is already lost. Name the segment it can actually see, LK108 out of Denver, give its real status, and be straight that it cannot see the inbound flight into Denver, so it cannot confirm the connection is missed. Ask before moving anything, and never rebook two passengers onto another day on an assumption it has not verified.",
+      "graders": [
+        {
+          "type": "rules",
+          "must_call": [
+            "lookup_booking",
+            "get_flight_status"
+          ],
+          "must_not_call": [
+            "confirm_rebooking",
+            "send_confirmation"
           ]
         },
         {
